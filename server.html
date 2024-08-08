@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebRTC Server</title>
+
+    <!-- Bootstrap CSS -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    />
+
+    <!-- Custom styles -->
+    <style>
+      body {
+        background-color: #f0f0f0;
+        font-family: Arial, sans-serif;
+      }
+
+      .dark-mode {
+        background-color: #121212;
+        color: #ffffff;
+      }
+
+      .container {
+        max-width: 700px;
+        margin: 50px auto;
+        background-color: #fff;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+        transition: background-color 0.3s, box-shadow 0.3s;
+      }
+
+      .dark-mode .container {
+        background-color: #1e1e1e;
+        box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+      }
+
+      .container h1 {
+        font-size: 1.75rem;
+        margin-bottom: 20px;
+      }
+
+      .form-label {
+        font-weight: bold;
+      }
+
+      .dark-mode .form-label {
+        color: #ffffff;
+      }
+
+      #offerContainer::-webkit-scrollbar {
+        display: none;
+      }
+
+      #messageView {
+        margin-top: 20px;
+        border: 1px solid #ddd;
+        padding: 10px;
+        min-height: 300px;
+        max-height: 300px;
+        overflow-y: auto;
+        background-color: #f9f9f9;
+        border-radius: 5px;
+        font-size: 1rem;
+        display: flex;
+        flex-direction: column;
+        display: none;
+        transition: display 0.3s;
+      }
+
+      #messageView::-webkit-scrollbar {
+        display: none;
+      }
+
+      .dark-mode #messageView {
+        background-color: #2c2c2c;
+        border-color: #444;
+      }
+
+      .message {
+        padding: 10px;
+        border-radius: 15px;
+        margin-bottom: 10px;
+        font-size: 1rem;
+        max-width: 80%;
+        word-wrap: break-word;
+      }
+
+      .server-message {
+        background-color: #d1e7dd;
+        text-align: right;
+        align-self: flex-end;
+      }
+
+      .dark-mode .server-message {
+        background-color: #3a3d3d;
+      }
+
+      .client-message {
+        background-color: #f8d7da;
+        text-align: left;
+        align-self: flex-start;
+      }
+
+      .dark-mode .client-message {
+        background-color: #5b3d3d;
+      }
+
+      #messageInputContainer {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 10px;
+        display: none;
+        transition: display 0.3s;
+      }
+
+      #messageInputContainer input {
+        flex: 1;
+      }
+
+      .btn {
+        border-radius: 5px;
+      }
+
+      .dark-mode .btn {
+        border-color: #444;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>WebRTC Server</h1>
+        <div id="status" class="badge bg-secondary">Disconnected</div>
+        <div class="form-check form-switch">
+          <input
+            class="form-check-input"
+            type="checkbox"
+            id="darkModeSwitch"
+            onchange="toggleDarkMode()"
+          />
+          <label class="form-check-label" for="darkModeSwitch">Dark Mode</label>
+        </div>
+      </div>
+
+      <div id="offerContainer" class="mb-3">
+        <label for="offer" class="form-label">Client Offer:</label>
+        <textarea
+          id="offer"
+          class="form-control"
+          placeholder="Paste client's offer JSON here"
+          rows="3"
+          required
+        ></textarea>
+      </div>
+
+      <div class="d-flex justify-content-center mb-3" id="acceptOffer">
+        <button class="btn btn-primary" onclick="setOffer()">
+          Accept Offer
+        </button>
+      </div>
+
+      <div id="answerContainer" class="mb-3">
+        <label for="answer" class="form-label">Server Answer:</label>
+        <textarea
+          id="answer"
+          class="form-control"
+          placeholder="Server answer will appear here"
+          rows="3"
+          readonly
+        ></textarea>
+      </div>
+
+      <div class="d-flex justify-content-center mb-3" id="copyAnswer">
+        <button class="btn btn-outline-secondary" onclick="copyAnswer()">
+          Copy Answer
+        </button>
+      </div>
+
+      <div id="messageView">
+        <!-- Messages will appear here -->
+      </div>
+
+      <div id="messageInputContainer" class="mt-3">
+        <input
+          type="text"
+          id="message"
+          class="form-control"
+          placeholder="Enter your message"
+          required
+          onkeypress="handleKeyPress(event)"
+        />
+        <button class="btn btn-success" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+
+    <script>
+      const configuration = {
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" },
+        ],
+      };
+
+      const rc = new RTCPeerConnection(configuration);
+
+      // Create data channel
+      rc.ondatachannel = (e) => {
+        rc.dc = e.channel;
+        rc.dc.onmessage = (e) => {
+          const messageView = document.getElementById("messageView");
+          messageView.innerHTML += `<div class="message client-message">Client: ${e.data}</div>`;
+          messageView.scrollTop = messageView.scrollHeight; // Auto scroll to the bottom
+        };
+
+        rc.dc.onopen = () => {
+          document.getElementById("status").innerText = "Connected";
+          document
+            .getElementById("status")
+            .classList.replace("bg-secondary", "bg-success");
+          showMessageContainer();
+        };
+      };
+
+      // Function to set offer
+      async function setOffer() {
+        try {
+          const offer = JSON.parse(document.getElementById("offer").value);
+          await rc.setRemoteDescription(offer);
+          document.getElementById("status").innerText =
+            "Offer Set Successfully";
+
+          const answer = await rc.createAnswer();
+          await rc.setLocalDescription(answer);
+          document.getElementById("status").innerText =
+            "Answer Created Successfully";
+          document.getElementById("answer").value = JSON.stringify(answer);
+        } catch (error) {
+          console.error("Error setting offer:", error);
+        }
+      }
+
+      // Function to send message
+      function sendMessage() {
+        const message = document.getElementById("message").value.trim();
+        if (!message) return; // Prevent sending empty messages
+        if (rc.dc) {
+          rc.dc.send(message);
+          const messageView = document.getElementById("messageView");
+          messageView.innerHTML += `<div class="message server-message">Server: ${message}</div>`;
+          document.getElementById("message").value = ""; // Clear the input field
+          messageView.scrollTop = messageView.scrollHeight; // Auto scroll to the bottom
+        } else {
+          console.warn("Data channel not established yet.");
+        }
+      }
+
+      // ICE candidate handling
+      rc.onicecandidate = (e) => {
+        if (e.candidate) return;
+        document.getElementById("answer").value = JSON.stringify(
+          rc.localDescription
+        );
+      };
+
+      // Show message container and input
+      function showMessageContainer() {
+        document.getElementById("messageView").style.display = "flex";
+        document.getElementById("messageInputContainer").style.display = "flex";
+        document.getElementById("offerContainer").style.display = "none";
+        document.getElementById("answerContainer").style.display = "none";
+        document
+          .getElementById("acceptOffer")
+          .classList.replace("d-flex", "d-none");
+        document
+          .getElementById("copyAnswer")
+          .classList.replace("d-flex", "d-none");
+      }
+
+      // Copy answer function
+      function copyAnswer() {
+        const answerText = document.getElementById("answer").value;
+        navigator.clipboard
+          .writeText(answerText)
+          .then(() => {
+            alert("Answer copied to clipboard");
+          })
+          .catch((err) => {
+            console.error("Error copying answer:", err);
+          });
+      }
+
+      // Toggle dark mode
+      function toggleDarkMode() {
+        document.body.classList.toggle("dark-mode");
+      }
+
+      // Handle Enter key press to send message
+      function handleKeyPress(event) {
+        if (event.key === "Enter") {
+          sendMessage();
+        }
+      }
+    </script>
+
+    <!-- Bootstrap Bundle JS (Popper.js included) -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+      crossorigin="anonymous"
+    ></script>
+  </body>
+</html>

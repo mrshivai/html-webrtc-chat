@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebRTC P2P Client</title>
+
+    <!-- Bootstrap CSS -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    />
+
+    <!-- Custom styles for this client page -->
+    <style>
+      body {
+        background-color: #f8f9fa;
+        font-family: Arial, sans-serif;
+      }
+
+      .dark-mode {
+        background-color: #121212;
+        color: #ffffff;
+      }
+
+      .container {
+        max-width: 700px;
+        margin: 50px auto;
+        background-color: #fff;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+        transition: background-color 0.3s, box-shadow 0.3s;
+      }
+
+      .dark-mode .container {
+        background-color: #1e1e1e;
+        box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+      }
+
+      .form-label {
+        font-weight: bold;
+      }
+
+      .dark-mode .form-label {
+        color: #ffffff;
+      }
+
+      #offerContainer {
+        display: flex;
+        overflow-x: auto;
+        white-space: nowrap;
+        margin-bottom: 15px;
+        padding: 10px;
+        background-color: #e9ecef;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        font-size: 0.9rem;
+      }
+
+      #offerContainer::-webkit-scrollbar {
+        display: none;
+      }
+
+      .dark-mode #offerContainer {
+        background-color: #343a40;
+        border-color: #444;
+      }
+
+      #messageView {
+        margin-top: 20px;
+        border: 1px solid #ddd;
+        padding: 10px;
+        min-height: 300px;
+        max-height: 300px;
+        overflow-y: auto;
+        background-color: #f9f9f9;
+        border-radius: 5px;
+        font-size: 1rem;
+        display: flex;
+        flex-direction: column;
+        display: none;
+        transition: display 0.3s;
+      }
+
+      #messageView::-webkit-scrollbar {
+        display: none;
+      }
+
+      .dark-mode #messageView {
+        background-color: #2c2c2c;
+        border-color: #444;
+      }
+
+      .message {
+        padding: 10px;
+        border-radius: 15px;
+        margin-bottom: 10px;
+        font-size: 1rem;
+        max-width: 80%;
+        word-wrap: break-word;
+      }
+
+      .client-message {
+        background-color: #d1e7dd;
+        text-align: right;
+        align-self: flex-end;
+      }
+
+      .dark-mode .client-message {
+        background-color: #3a3d3d;
+      }
+
+      .server-message {
+        background-color: #f8d7da;
+        text-align: left;
+        align-self: flex-start;
+      }
+
+      .dark-mode .server-message {
+        background-color: #5b3d3d;
+      }
+
+      #messageInputContainer {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 10px;
+        display: none;
+        transition: display 0.3s;
+      }
+
+      #messageInputContainer input {
+        flex: 1;
+      }
+
+      .btn {
+        border-radius: 5px;
+      }
+
+      .dark-mode .btn {
+        border-color: #444;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>WebRTC P2P Client</h1>
+        <div id="status" class="badge bg-secondary">Disconnected</div>
+        <div class="form-check form-switch">
+          <input
+            class="form-check-input"
+            type="checkbox"
+            id="darkModeSwitch"
+            onchange="toggleDarkMode()"
+          />
+          <label class="form-check-label" for="darkModeSwitch">Dark Mode</label>
+        </div>
+      </div>
+
+      <div id="offerContainer" class="mb-3">
+        <span id="offer">Offer will appear here</span>
+      </div>
+
+      <div id="copyOfferContainer" class="d-flex justify-content-center mb-3">
+        <button class="btn btn-outline-secondary" onclick="copyOffer()">
+          Copy Offer
+        </button>
+      </div>
+
+      <div id="answerContainer" class="mb-3">
+        <label for="answer" class="form-label">Server Answer:</label>
+        <textarea
+          id="answer"
+          class="form-control"
+          placeholder="Enter server's answer JSON here"
+          rows="3"
+          required
+        ></textarea>
+      </div>
+
+      <div id="connectContainer" class="mb-3 text-center">
+        <button class="btn btn-primary" onclick="setAnswer()">Connect</button>
+      </div>
+
+      <div id="messageView">
+        <!-- Messages will appear here -->
+      </div>
+
+      <div id="messageInputContainer" class="mt-3">
+        <input
+          type="text"
+          id="message"
+          class="form-control"
+          placeholder="Enter your message"
+          required
+          onkeypress="handleKeyPress(event)"
+        />
+        <button class="btn btn-success" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+
+    <script>
+      const configuration = {
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" },
+        ],
+      };
+
+      const lc = new RTCPeerConnection(configuration);
+
+      // Create data channel
+      const dc = lc.createDataChannel("Channel");
+
+      // Set up message receive handler
+      dc.onmessage = (e) => {
+        const messageView = document.getElementById("messageView");
+        messageView.innerHTML += `<div class="message server-message">Server: ${e.data}</div>`;
+        messageView.scrollTop = messageView.scrollHeight; // Auto scroll to the bottom
+      };
+
+      // Set up connection status handler
+      dc.onopen = (e) => {
+        document.getElementById("status").innerText = "Connected";
+        document
+          .getElementById("status")
+          .classList.replace("bg-secondary", "bg-success");
+        showMessageContainer();
+      };
+
+      // Create offer
+      lc.onicecandidate = async (e) => {
+        if (e.candidate) return;
+        const offerText = JSON.stringify(lc.localDescription);
+        document.getElementById("offer").innerText = offerText;
+      };
+
+      async function createOffer() {
+        try {
+          const offer = await lc.createOffer();
+          await lc.setLocalDescription(offer);
+          console.log("Offer created successfully.");
+        } catch (error) {
+          console.error("Error creating offer:", error);
+        }
+      }
+
+      // Send message function
+      function sendMessage() {
+        const message = document.getElementById("message").value.trim();
+        if (!message) return; // Prevent sending empty messages
+        const messageView = document.getElementById("messageView");
+        messageView.innerHTML += `<div class="message client-message">Client: ${message}</div>`;
+        dc.send(message);
+        document.getElementById("message").value = ""; // Clear the input field
+        messageView.scrollTop = messageView.scrollHeight; // Auto scroll to the bottom
+      }
+
+      // Set answer function
+      function setAnswer() {
+        try {
+          const answer = JSON.parse(document.getElementById("answer").value);
+          lc.setRemoteDescription(answer);
+        } catch (error) {
+          alert("Invalid server answer JSON.");
+        }
+      }
+
+      // Copy offer function
+      function copyOffer() {
+        const offerText = document.getElementById("offer").innerText;
+        navigator.clipboard
+          .writeText(offerText)
+          .then(() => {
+            alert("Offer copied to clipboard");
+          })
+          .catch((err) => {
+            console.error("Error copying offer:", err);
+          });
+      }
+
+      // Toggle dark mode
+      function toggleDarkMode() {
+        document.body.classList.toggle("dark-mode");
+      }
+
+      // Handle Enter key press
+      function handleKeyPress(event) {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault(); // Prevent new line in the input field
+          sendMessage();
+        }
+      }
+
+      // Show message container and input
+      function showMessageContainer() {
+        document.getElementById("messageView").style.display = "flex";
+        document.getElementById("messageInputContainer").style.display = "flex";
+        document.getElementById("offerContainer").style.display = "none";
+        document.getElementById("answerContainer").style.display = "none";
+        document.getElementById("connectContainer").style.display = "none";
+        document
+          .getElementById("copyOfferContainer")
+          .classList.replace("d-flex", "d-none");
+      }
+
+      // Initialize by creating an offer
+      createOffer();
+    </script>
+
+    <!-- Bootstrap Bundle JS (Popper.js included) -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+      crossorigin="anonymous"
+    ></script>
+  </body>
+</html>
